@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Casa do Pastel - Painel Administrativo</title>
+    <script>
+        if (!sessionStorage.getItem('token')) {
+            window.location.href = 'login.html';
+        }
+    </script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-shell">
+        <!-- Header Móvel Compacto -->
+        <header class="mobile-navbar">
+            <img src="img/logo.png" alt="Logo" class="mobile-logo">
+            <button id="btnMobileMenu" class="hamburger-btn" aria-label="Abrir Menu">
+                <i class="fas fa-bars"></i>
+            </button>
+        </header>
+
+        <aside class="sidebar" id="sidebar">
+            <div class="brand">
+                <img src="img/logo.png" alt="Casa do Pastel">
+                <div>
+                    <strong>IA STUDIO | Casa do Pastel</strong>
+                    <span>Painel Administrativo</span>
+                </div>
+                <button id="btnCloseSidebar" class="close-sidebar-btn"><i class="fas fa-times"></i></button>
+            </div>
+
+            <nav class="sidebar-nav" aria-label="Navegacao principal">
+                <button class="nav-item active" data-view-target="menuView">
+                    <i class="fas fa-utensils"></i>
+                    Cardapio
+                </button>
+                <button class="nav-item" data-view-target="deliveryView">
+                    <i class="fas fa-motorcycle"></i>
+                    Entrega e Pagamento
+                </button>
+                <button class="nav-item" data-view-target="financeView">
+                    <i class="fas fa-chart-line"></i>
+                    Financeiro
+                </button>
+                <button id="btnLogout" class="nav-item logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Sair
+                </button>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow">Painel administrativo</p>
+                    <h1 id="viewTitle">Gestao do Cardapio</h1>
+                </div>
+                <div class="status-strip">
+                    <span><i class="fas fa-circle"></i> Online</span>
+                    <span id="stockSummary">0 itens ativos</span>
+                </div>
+            </header>
+
+            <section class="command-panel">
+                <form id="assistantForm" class="command-form">
+                    <i class="fas fa-brain"></i>
+                    <input type="text" id="assistantCommand" placeholder="Comando do painel" autocomplete="off">
+                    <button type="submit" class="btn-primary">
+                        <i class="fas fa-paper-plane"></i>
+                        Processar
+                    </button>
+                </form>
+                <div id="assistantResponse" class="assistant-response">
+                    Pronto para operar cardapio, entrega, pagamento e relatorios financeiros.
+                </div>
+            </section>
+
+            <section id="menuView" class="view active">
+                <div class="section-toolbar">
+                    <div class="search-bar">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="searchProduct" placeholder="Buscar no cardapio">
+                    </div>
+                    <button class="btn-primary" id="btnOpenModal">
+                        <i class="fas fa-plus"></i>
+                        Novo Produto
+                    </button>
+                </div>
+
+                <div class="split-layout">
+                    <section class="panel">
+                        <div class="panel-header">
+                            <h2>Categorias do Topo</h2>
+                            <span id="categoryCount">5 categorias</span>
+                        </div>
+                        <form id="categoryForm" class="inline-form category-form">
+                            <input type="text" id="categoryName" placeholder="Nova categoria" required>
+                            <button type="submit" class="btn-secondary">
+                                <i class="fas fa-plus"></i>
+                                Adicionar
+                            </button>
+                        </form>
+                        <div id="categoryList" class="category-list"></div>
+                    </section>
+
+                    <section class="panel" style="margin-top: 16px;">
+                        <div class="panel-header">
+                            <h2>Gerenciar Adicionais</h2>
+                            <span id="addonCount">0 itens</span>
+                        </div>
+                        <form id="globalAddonForm" class="inline-form category-form">
+                            <input type="text" id="globalAddonName" placeholder="Ex: Bacon" required>
+                            <input type="number" id="globalAddonPrice" placeholder="R$" step="0.01" style="width: 80px;" required>
+                            <button type="submit" class="btn-secondary">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </form>
+                        <div id="globalAddonList" class="category-list"></div>
+                    </section>
+
+                    <section class="panel wide">
+                        <div class="panel-header">
+                            <h2>Produtos</h2>
+                            <span id="productCount">0 produtos</span>
+                        </div>
+                        <div class="table-scroll">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Imagem</th>
+                                        <th>Produto</th>
+                                        <th>Categoria</th>
+                                        <th>Preco</th>
+                                        <th>Adicionais</th>
+                                        <th>Estoque</th>
+                                        <th>Status</th>
+                                        <th>Acoes</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="productTableBody"></tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <section id="deliveryView" class="view">
+                <div class="split-layout">
+                    <section class="panel">
+                        <div class="panel-header">
+                            <h2>Pagamentos</h2>
+                            <span id="paymentSummary">0 ativos</span>
+                        </div>
+                        <form id="paymentForm" class="payment-grid">
+                            <label class="toggle-line">
+                                <input type="checkbox" id="payPix">
+                                <span>Pix</span>
+                            </label>
+                            <label class="toggle-line">
+                                <input type="checkbox" id="payCard">
+                                <span>Cartao</span>
+                            </label>
+                            <label class="toggle-line">
+                                <input type="checkbox" id="payCash">
+                                <span>Dinheiro</span>
+                            </label>
+                            <button type="submit" class="btn-primary">
+                                <i class="fas fa-save"></i>
+                                Salvar Pagamentos
+                            </button>
+                        </form>
+                    </section>
+
+                    <section class="panel wide">
+                        <div class="panel-header">
+                            <h2>Taxas por Bairro</h2>
+                            <span id="neighborhoodCount">0 bairros</span>
+                        </div>
+                        <form id="neighborhoodForm" class="inline-form">
+                            <input type="text" id="neighborhoodName" placeholder="Bairro" required>
+                            <input type="number" id="neighborhoodFee" placeholder="Taxa" step="0.01" min="0" required>
+                            <button type="submit" class="btn-secondary">
+                                <i class="fas fa-plus"></i>
+                                Adicionar
+                            </button>
+                        </form>
+                        <div class="table-scroll compact">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Bairro</th>
+                                        <th>Taxa</th>
+                                        <th>Status</th>
+                                        <th>Acoes</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="neighborhoodTableBody"></tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <section id="financeView" class="view">
+                <div class="metric-grid">
+                    <article class="metric-card">
+                        <span>Hoje</span>
+                        <strong id="dailyRevenue">R$ 0,00</strong>
+                        <small id="dailyOrders">0 pedidos</small>
+                    </article>
+                    <article class="metric-card">
+                        <span>Semana</span>
+                        <strong id="weeklyRevenue">R$ 0,00</strong>
+                        <small id="weeklyOrders">0 pedidos</small>
+                    </article>
+                    <article class="metric-card">
+                        <span>Mes</span>
+                        <strong id="monthlyRevenue">R$ 0,00</strong>
+                        <small id="monthlyOrders">0 pedidos</small>
+                    </article>
+                </div>
+
+                <div class="split-layout">
+                    <section class="panel">
+                        <div class="panel-header">
+                            <h2>Mais Vendidos</h2>
+                            <span id="rankingPeriod">30 dias</span>
+                        </div>
+                        <div id="topProductsList" class="ranking-list"></div>
+                    </section>
+
+                    <section class="panel wide">
+                        <div class="panel-header">
+                            <h2>Todos os Pedidos</h2>
+                            <span id="ordersCount">0 pedidos</span>
+                        </div>
+                        <div class="table-scroll">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Data</th>
+                                        <th>Hora</th>
+                                        <th>Itens</th>
+                                        <th>Pagamento</th>
+                                        <th>Taxa</th>
+                                        <th>Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ordersTableBody"></tbody>
+                            </table>
+                        </div>
+                        <div id="ordersExpansionContainer" class="orders-expansion-container">
+                            <button id="btnExpandOrders" class="btn-muted">Ver Histórico Completo</button>
+                        </div>
+                    </section>
+                </div>
+
+                <section class="panel chart-panel">
+                    <div class="panel-header">
+                        <h2>Grafico de Vendas</h2>
+                        <button id="btnOpenDatePicker" class="btn-muted" style="min-height: 32px; padding: 4px 12px; font-size: 0.85rem;">
+                            <i class="fas fa-calendar-alt"></i>
+                            <span id="activeFilterLabel">Ultimos 7 dias</span>
+                        </button>
+                    </div>
+                    <div id="salesChart" class="sales-chart"></div>
+                </section>
+            </section>
+        </main>
+    </div>
+
+    <div id="productModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Adicionar Produto</h3>
+                <button type="button" class="icon-button" id="btnCloseModal" aria-label="Fechar">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <form id="productForm">
+                <input type="hidden" id="productId">
+
+                <div class="form-row">
+                    <div>
+                        <label for="productName">Nome</label>
+                        <input type="text" id="productName" required>
+                    </div>
+                    <div>
+                        <label for="productCategory">Categoria</label>
+                        <select id="productCategory" required></select>
+                    </div>
+                </div>
+
+                <label for="productDesc">Descricao</label>
+                <textarea id="productDesc" rows="3"></textarea>
+
+                <div class="form-row">
+                    <div>
+                        <label for="productPrice">Preco base</label>
+                        <input type="number" id="productPrice" step="0.01" min="0" required>
+                    </div>
+                    <div id="stockGroup">
+                        <label for="productStock">Estoque de refrigerantes</label>
+                        <input type="number" id="productStock" min="0" required>
+                    </div>
+                </div>
+
+                <section class="addons-editor-section">
+                    <div class="panel-header compact-header">
+                        <h2>Adicionais Padrao</h2>
+                        <label class="toggle-line compact-toggle">
+                            <input type="checkbox" id="productHasAddons">
+                            <span>Usar neste produto</span>
+                        </label>
+                    </div>
+                    <div id="addonsEditor" class="addons-editor"></div>
+                    <div class="inline-form addon-inline-form">
+                        <input type="text" id="addonName" placeholder="Nome do adicional">
+                        <input type="number" id="addonPrice" placeholder="Valor" step="0.01" min="0">
+                        <button type="button" class="btn-secondary" id="btnAddAddon">
+                            <i class="fas fa-plus"></i>
+                            Adicionar
+                        </button>
+                    </div>
+                </section>
+
+                <div class="form-row align-end">
+                    <div>
+                        <label for="productImage">Imagem</label>
+                        <input type="file" id="productImage" accept="image/*">
+                    </div>
+                    <label class="toggle-line form-toggle">
+                        <input type="checkbox" id="productVisible">
+                        <span>Visivel no site</span>
+                    </label>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">
+                        <i class="fas fa-save"></i>
+                        Salvar
+                    </button>
+                    <button type="button" class="btn-muted" id="btnCancelProduct">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Date Range Picker Modal -->
+    <div id="datePickerModal" class="date-picker-modal">
+        <div class="date-picker-container">
+            <!-- Menu Lateral de Atalhos -->
+            <aside class="date-picker-sidebar" id="datePickerPresets">
+                <button class="preset-btn" data-preset="24h">Últimas 24hrs</button>
+                <button class="preset-btn active" data-preset="7d">Últimos 7 dias</button>
+                <button class="preset-btn" data-preset="month">Este mês</button>
+            </aside>
+            
+            <div class="date-picker-main">
+                <!-- Calendário Duplo -->
+                <div id="datePickerCalendars" class="calendars-row"></div>
+                
+                <!-- Rodapé de Ação -->
+                <footer class="date-picker-footer">
+                    <div id="selectedRangeDisplay">Selecione um intervalo</div>
+                    <div class="footer-actions">
+                        <button id="cancelDatePicker" class="btn-muted">Cancelar</button>
+                        <button id="applyDatePicker" class="btn-primary">Aplicar</button>
+                    </div>
+                </footer>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js" type="module" defer></script>
+</body>
+</html>
