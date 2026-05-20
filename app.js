@@ -1,6 +1,6 @@
 import { db } from "./firebase.js";
 import { 
-    collection, onSnapshot, doc, updateDoc, deleteDoc 
+    collection, onSnapshot, doc, updateDoc, deleteDoc, query, getDocs, orderBy
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { 
     adicionarProduto, 
@@ -10,10 +10,9 @@ import {
     excluirCategoria, 
     salvarAdicional,
     excluirAdicional,
-    salvarBairro,
-    excluirBairro,
-    atualizarConfiguracoes, 
-    ouvirPedidos 
+    salvarBairro, // Manter se ainda for usado em outro lugar
+    excluirBairro, // Manter se ainda for usado em outro lugar
+    atualizarConfiguracoes
 } from "./firebase-service.js";
 
 console.log('Instância do DB:', db);
@@ -189,9 +188,6 @@ const elements = {
     weeklyOrders: document.getElementById('weeklyOrders'),
     monthlyRevenue: document.getElementById('monthlyRevenue'),
     monthlyOrders: document.getElementById('monthlyOrders'),
-    topProductsList: document.getElementById('topProductsList'),
-    ordersTableBody: document.getElementById('ordersTableBody'),
-    ordersCount: document.getElementById('ordersCount'),
     salesChart: document.getElementById('salesChart'),
     stockGroup: document.getElementById('stockGroup'),
     productHasAddons: document.getElementById('productHasAddons'),
@@ -237,7 +233,9 @@ elements.neighborhoodTableBody.addEventListener('click', handleNeighborhoodActio
 elements.assistantForm.addEventListener('submit', handleAssistantCommand);
 elements.btnAddAddon.addEventListener('click', addAddonFromInputs);
 elements.addonsEditor.addEventListener('click', handleAddonEditorAction);
-document.getElementById('btnExpandOrders')?.addEventListener('click', handleExpandOrders);
+// botão antigo 'btnExpandOrders' removido do HTML — funcionalidade descontinuada
+// Botão de pesquisa de produtos: foca o campo de busca ou abre edição se houver um único resultado
+document.getElementById('btn-search-produtos')?.addEventListener('click', handleSearchProdutos);
 
 document.getElementById('btnOpenDatePicker')?.addEventListener('click', openDatePicker);
 document.getElementById('cancelDatePicker')?.addEventListener('click', closeDatePicker);
@@ -314,10 +312,58 @@ function initFirebase() {
         }
     });
 
-    // Pedidos
-    ouvirPedidos((novosPedidos) => {
-        orders = novosPedidos;
-        renderFinance();
+    // --- Lógica de Pedidos: Carga Inicial (getDocs) + Escuta em Tempo Real (onSnapshot) ---
+
+    // Define a query para pedidos, ordenando por data de criação decrescente
+    const ordersQuery = query(
+        collection(db, "pedidos"),
+        orderBy("createdAt", "desc")
+    );
+
+    // Função única para processar o snapshot/docs e renderizar
+    function processarERenderizarPedidos(snapshotOrDocs) {
+        const listaDePedidos = [];
+        snapshotOrDocs.forEach((doc) => {
+            listaDePedidos.push({ id: doc.id, ...doc.data() });
+        });
+
+        // A ordenação por data decrescente já é aplicada na query do Firestore (ordersQuery)
+        // mas mantemos aqui para garantir caso a query mude ou para dados sem createdAt
+        listaDePedidos.sort((a, b) => {
+            const dataA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+            const dataB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+            return dataB.getTime() - dataA.getTime(); // Comparar timestamps para garantir ordem
+        });
+
+        // Atualiza a variável global 'orders'
+        orders = listaDePedidos;
+
+        // Força a renderização de TUDO direto na carga inicial e em cada atualização
+        if (typeof renderFinance === "function") renderFinance(listaDePedidos);
+        if (typeof renderTopProducts === "function") renderTopProducts(getProductRanking(listaDePedidos));
+        if (typeof renderOrders === "function") renderOrders(listaDePedidos);
+    }
+
+    // 1. Carga inicial dos pedidos (getDocs)
+    async function cargaInicialPedidos() {
+        try {
+            const querySnapshot = await getDocs(ordersQuery);
+            processarERenderizarPedidos(querySnapshot);
+            console.log("Carga inicial de pedidos realizada com sucesso!");
+        } catch (error) {
+            console.error("Erro na carga inicial de pedidos:", error);
+        }
+    }
+    cargaInicialPedidos(); // Chama a carga inicial imediatamente
+
+    // 2. Escuta em tempo real para novas vendas (onSnapshot)
+    onSnapshot(ordersQuery, (snapshot) => {
+        // Só renderiza se houver mudanças reais (não de cache local) para não sobrecarregar
+        if (!snapshot.metadata.hasPendingWrites) {
+            processarERenderizarPedidos(snapshot);
+        }
+    }, (error) => {
+        console.error("Erro crítico no Firestore (onSnapshot de pedidos):", error);
     });
 }
 
@@ -553,103 +599,267 @@ function renderDelivery() {
     }
 }
 
-function renderFinance() {
-    const summary = getFinanceSummary();
-    elements.dailyRevenue.textContent = formatCurrency(summary.daily.total);
-    elements.dailyOrders.textContent = `${summary.daily.count} pedidos`;
-    elements.weeklyRevenue.textContent = formatCurrency(summary.weekly.total);
-    elements.weeklyOrders.textContent = `${summary.weekly.count} pedidos`;
-    elements.monthlyRevenue.textContent = formatCurrency(summary.monthly.total);
-    elements.monthlyOrders.textContent = `${summary.monthly.count} pedidos`;
-    elements.ordersCount.textContent = `${orders.length} pedidos`;
+function renderFinance(customOrders = null) {
+    const ordersToAnalyze = customOrders || orders;
+    const summary = getFinanceSummary(ordersToAnalyze);
+    
+    // Mapeamento de campos de métricas para atualização segura
+    const metricFields = [
+        { el: elements.dailyRevenue, val: formatCurrency(summary.daily.total), id: 'dailyRevenue' },
+        { el: elements.dailyOrders, val: `${summary.daily.count} pedidos`, id: 'dailyOrders' },
+        { el: elements.weeklyRevenue, val: formatCurrency(summary.weekly.total), id: 'weeklyRevenue' },
+        { el: elements.weeklyOrders, val: `${summary.weekly.count} pedidos`, id: 'weeklyOrders' },
+        { el: elements.monthlyRevenue, val: formatCurrency(summary.monthly.total), id: 'monthlyRevenue' },
+        { el: elements.monthlyOrders, val: `${summary.monthly.count} pedidos`, id: 'monthlyOrders' },
+        { el: document.getElementById('total-pedidos-contador'), val: `${ordersToAnalyze.length} pedidos`, id: 'total-pedidos-contador' }
+    ];
+
+    metricFields.forEach(field => {
+        if (field.el) {
+            field.el.textContent = field.val;
+        } else {
+            console.warn(`Aviso: Elemento com ID '${field.id}' não encontrado no HTML.`);
+        }
+    });
 
     renderTopProducts(summary.ranking);
-    renderOrders();
+    renderOrders(ordersToAnalyze);
     renderSalesChart();
 }
 
 function renderTopProducts(ranking) {
-    if (!ranking.length) {
-        elements.topProductsList.innerHTML = '<p class="empty-state">Sem vendas registradas.</p>';
+    const container = document.getElementById('container-mais-vendidos');
+    if (!container) {
+        console.warn("Aviso: Container de produtos mais vendidos ('container-mais-vendidos') não encontrado no HTML.");
         return;
     }
 
-    elements.topProductsList.innerHTML = ranking.slice(0, 5).map((item, index) => `
-        <div class="ranking-item">
-            <strong>${index + 1}</strong>
-            <div>
-                <span>${escapeHtml(item.name)}</span>
-                <small>${item.quantity} un vendidas</small>
-            </div>
-            <b>${formatCurrency(item.revenue)}</b>
+    if (!ranking.length) {
+        container.innerHTML = '<div class="sem-vendas">Sem vendas registradas.</div>';
+        return;
+    }
+
+    container.innerHTML = ranking.slice(0, 5).map((produto, index) => `
+        <div class="item-ranking-produto" style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px dashed #eee; font-size: 14px;">
+            <span><strong>${index + 1}º</strong> ${escapeHtml(produto.name)}</span>
+            <span style="color: #28a745; font-weight: bold;">${produto.quantity} und.</span>
         </div>
     `).join('');
 }
 
-function renderOrders() {
-    const isMobile = window.innerWidth <= 768;
-    const defaultLimit = isMobile ? 3 : 5;
-
-    // Se for a primeira renderização ou reset, aplica o limite responsivo
-    if (ordersVisibleCount === 0) {
-        ordersVisibleCount = defaultLimit;
+function renderOrders(pedidos) {
+    // 1. Busca o corpo da tabela exatamente pelo ID do seu HTML
+    const tabelaCorpo = document.getElementById("corpo-tabela-pedidos");
+    if (!tabelaCorpo) {
+        console.warn("Aviso: Elemento 'corpo-tabela-pedidos' não foi encontrado no HTML.");
+        return;
     }
 
-    const sortedOrders = [...orders]
-        .filter(order => {
-            const d = new Date(`${order.date}T00:00:00`);
-            return d >= startOfDay(pickerRange.start) && d <= startOfDay(pickerRange.end);
-        })
-        .sort((a, b) => {
-            return new Date(`${b.date}T${b.time || '00:00'}:00`) - new Date(`${a.date}T${a.time || '00:00'}:00`);
+    // Limpa a tabela antes de colocar os novos dados
+    tabelaCorpo.innerHTML = "";
+
+    // Se não houver nenhum pedido, avisa na tabela
+    if (!pedidos || pedidos.length === 0) {
+        tabelaCorpo.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#999; padding:20px;">Nenhum pedido encontrado.</td></tr>`;
+        return;
+    }
+    // Salva o array completo em escopo global para uso posterior
+    try { window._allOrders = structuredCloneSafe(pedidos); } catch (e) { window._allOrders = pedidos; }
+
+    // Renderiza apenas os 5 primeiros pedidos na visualizacao principal
+    const visibles = pedidos.slice(0, 5);
+
+    // 2. Varre a lista de pedidos VISIVEIS
+    visibles.forEach(pedido => {
+        // --- COLUNA 1: TIPO (Entrega / Retirada) ---
+        const tipoStr = pedido.tipo ? pedido.tipo.toUpperCase() : "---";
+        const badgeTipoClass = pedido.tipo === "entrega" ? "badge-entrega" : "badge-retirada"; 
+        // Nota: você pode estilizar essas classes no seu CSS se quiser, ou deixar texto puro:
+        const tipoHTML = `<span class="${badgeTipoClass}" style="padding:4px 8px; border-radius:4px; font-weight:bold; font-size:12px;">${tipoStr}</span>`;
+
+        // --- COLUNA 2: NOME DO CLIENTE ---
+        const nomeCliente = pedido.nomeCliente || "Cliente sem Nome";
+
+        // --- COLUNA 3: ITENS (Mapeando o Array de Itens) ---
+        const listaItens = pedido.itens || [];
+        let itensHTML = "";
+        
+        listaItens.forEach(item => {
+            const nomeItem = item.name || item.nome || "Item";
+            const qtdItem = item.qtd || 1;
+            itensHTML += `<div style="margin-bottom: 4px;"><strong>${qtdItem}x</strong> ${nomeItem}</div>`;
+            
+            // Se o item tiver adicionais/complementos salvos
+            const complementos = item.complementos || item.addons || [];
+            if (complementos.length > 0) {
+                const nomesComp = complementos.map(c => c.nome || c.name).join(', ');
+                itensHTML += `<div style="font-size:11px; color:#666; margin-left:10px; margin-bottom:6px;">+ (${nomesComp})</div>`;
+            }
         });
+        if (itensHTML === "") itensHTML = `<span style="color:#999;">Sem itens</span>`;
 
-    const ordersToRender = sortedOrders.slice(0, ordersVisibleCount);
-    const btnExpand = document.getElementById('btnExpandOrders');
-    const expansionContainer = document.getElementById('ordersExpansionContainer');
-
-    // Controle do botão de expansão
-    if (ordersVisibleCount >= sortedOrders.length) {
-        expansionContainer.style.display = 'none';
-    } else {
-        expansionContainer.style.display = 'flex';
-        if (sortedOrders.length > 20) {
-            btnExpand.innerHTML = '<i class="fas fa-plus-circle"></i> Carregar Mais';
-        } else {
-            btnExpand.innerHTML = '<i class="fas fa-history"></i> Ver Histórico Completo';
+        // --- COLUNA 4: BAIRRO ---
+        // Se for entrega pega o bairro, se for retirada mostra "Balcão/Retirada"
+        let bairroStr = pedido.bairro || "Não informado";
+        if (pedido.tipo === "retirada") {
+            bairroStr = `<span style="color:#666; font-style:italic;">Retirada</span>`;
         }
-    }
 
-    elements.ordersTableBody.innerHTML = ordersToRender.map((order) => {
-        const items = order.items
-            .map((item) => `${item.quantity}x ${escapeHtml(item.name)}`)
-            .join(', ');
+        // --- COLUNA 5: DATA E HORA ---
+        let dataHoraHTML = "---";
+        if (pedido.createdAt) {
+            // Converte se for Timestamp do Firebase, senão lê como data padrão
+            const dataObj = pedido.createdAt.toDate ? pedido.createdAt.toDate() : new Date(pedido.createdAt);
+            if (!isNaN(dataObj)) {
+                const dataStr = dataObj.toLocaleDateString('pt-BR');
+                const horaStr = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                dataHoraHTML = `<div>${dataStr}</div><div style="font-size:11px; color:#777;">${horaStr}</div>`;
+            }
+        }
 
-        return `
-            <tr>
-                <td data-label="Data">${formatDate(order.date)}</td>
-                <td data-label="Hora">${escapeHtml(order.time || '12:00')}</td>
-                <td data-label="Itens">${items}</td>
-                <td data-label="Pagamento">${escapeHtml(order.paymentMethod)}</td>
-                <td data-label="Taxa">${formatCurrency(order.deliveryFee)}</td>
-                <td data-label="Total">${formatCurrency(getOrderTotal(order))}</td>
-            </tr>
+        // --- COLUNA 6: FORMA DE PAGAMENTO ---
+        const pagamentoStr = pedido.formaPagamento ? pedido.formaPagamento.toUpperCase() : "NÃO INFORMADO";
+
+        // --- COLUNA 7: TOTAL DA COMPRA ---
+        const valorTotal = pedido.total !== undefined ? Number(pedido.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : "R$ 0,00";
+
+        // 3. Monta a linha (tr) respeitando as 7 colunas exatas do seu HTML head
+        const linha = document.createElement("tr");
+        linha.innerHTML = `
+            <td style="vertical-align: middle; text-align: center;">${tipoHTML}</td>
+            <td style="vertical-align: middle;"><strong>${nomeCliente}</strong></td>
+            <td style="vertical-align: middle; text-align: left;">${itensHTML}</td>
+            <td style="vertical-align: middle;">${bairroStr}</td>
+            <td style="vertical-align: middle; text-align: center;">${dataHoraHTML}</td>
+            <td style="vertical-align: middle; text-align: center;"><span style="background:#f0f0f0; padding:3px 6px; border-radius:4px; font-size:12px;">${pagamentoStr}</span></td>
+            <td style="vertical-align: middle; text-align: right;"><strong>${valorTotal}</strong></td>
         `;
-    }).join('');
+
+        // Injeta a linha criada no corpo da tabela
+        tabelaCorpo.appendChild(linha);
+    });
+
+        // Atualiza opcionalmente o contador se o elemento existir
+        const contador = document.getElementById("total-pedidos-contador");
+        if (contador) {
+            contador.textContent = `${pedidos.length} pedidos`;
+        }
+
+        /* --- Modal e Botao "Ver Tudo" (Histórico Completo) --- */
+        const btnVerTudo = document.getElementById('btn-ver-tudo-pedidos');
+        const modalHistorico = document.getElementById('modal-historico');
+        const corpoHistorico = document.getElementById('corpo-tabela-historico-completo');
+        const btnFechar = document.getElementById('fechar-modal-historico');
+
+        // Função que monta as linhas (reusa estrutura similar) e injeta no historico completo
+        function popularHistoricoCompleto(sourcePedidos) {
+            if (!corpoHistorico) return;
+            corpoHistorico.innerHTML = '';
+            const lista = (Array.isArray(sourcePedidos) ? sourcePedidos : window._allOrders || []);
+            if (!lista.length) {
+                corpoHistorico.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#999; padding:20px;">Nenhum pedido no histórico.</td></tr>`;
+                return;
+            }
+
+            lista.forEach(pedido => {
+                const tipoStr = pedido.tipo ? pedido.tipo.toUpperCase() : "---";
+                const badgeTipoClass = pedido.tipo === "entrega" ? "badge-entrega" : "badge-retirada";
+                const tipoHTML = `<span class="${badgeTipoClass}" style="padding:4px 8px; border-radius:4px; font-weight:bold; font-size:12px;">${tipoStr}</span>`;
+                const nomeCliente = pedido.nomeCliente || "Cliente sem Nome";
+                const listaItens = pedido.itens || [];
+                let itensHTML = "";
+                listaItens.forEach(item => {
+                    const nomeItem = item.name || item.nome || "Item";
+                    const qtdItem = item.qtd || 1;
+                    itensHTML += `<div style="margin-bottom: 4px;"><strong>${qtdItem}x</strong> ${nomeItem}</div>`;
+                    const complementos = item.complementos || item.addons || [];
+                    if (complementos.length > 0) {
+                        const nomesComp = complementos.map(c => c.nome || c.name).join(', ');
+                        itensHTML += `<div style="font-size:11px; color:#666; margin-left:10px; margin-bottom:6px;">+ (${nomesComp})</div>`;
+                    }
+                });
+                if (itensHTML === "") itensHTML = `<span style="color:#999;">Sem itens</span>`;
+                let bairroStr = pedido.bairro || "Não informado";
+                if (pedido.tipo === "retirada") bairroStr = `<span style="color:#666; font-style:italic;">Retirada</span>`;
+                let dataHoraHTML = "---";
+                if (pedido.createdAt) {
+                    const dataObj = pedido.createdAt.toDate ? pedido.createdAt.toDate() : new Date(pedido.createdAt);
+                    if (!isNaN(dataObj)) {
+                        const dataStr = dataObj.toLocaleDateString('pt-BR');
+                        const horaStr = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                        dataHoraHTML = `<div>${dataStr}</div><div style="font-size:11px; color:#777;">${horaStr}</div>`;
+                    }
+                }
+                const pagamentoStr = pedido.formaPagamento ? pedido.formaPagamento.toUpperCase() : "NÃO INFORMADO";
+                const valorTotal = pedido.total !== undefined ? Number(pedido.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : "R$ 0,00";
+
+                const linha = document.createElement('tr');
+                linha.innerHTML = `
+                    <td style="vertical-align: middle; text-align: center;">${tipoHTML}</td>
+                    <td style="vertical-align: middle;"><strong>${escapeHtml(nomeCliente)}</strong></td>
+                    <td style="vertical-align: middle; text-align: left;">${itensHTML}</td>
+                    <td style="vertical-align: middle;">${bairroStr}</td>
+                    <td style="vertical-align: middle; text-align: center;">${dataHoraHTML}</td>
+                    <td style="vertical-align: middle; text-align: center;"><span style="background:#f0f0f0; padding:3px 6px; border-radius:4px; font-size:12px;">${pagamentoStr}</span></td>
+                    <td style="vertical-align: middle; text-align: right;"><strong>${valorTotal}</strong></td>
+                `;
+                corpoHistorico.appendChild(linha);
+            });
+        }
+
+        // Atacha evento no botão "Ver Tudo" somente uma vez
+        if (btnVerTudo && !btnVerTudo.dataset.bound) {
+            btnVerTudo.dataset.bound = '1';
+            btnVerTudo.addEventListener('click', (e) => {
+                e.preventDefault();
+                const source = window._allOrders || pedidos;
+                popularHistoricoCompleto(source);
+                if (modalHistorico) {
+                    modalHistorico.style.display = 'flex';
+                    const scrollY = window.scrollY || window.pageYOffset || 0;
+                    document.body.style.position = 'fixed';
+                    document.body.style.top = `-${scrollY}px`;
+                    document.body.style.left = '0';
+                    document.body.style.right = '0';
+                    document.body.dataset.scrollY = String(scrollY);
+                }
+            });
+        }
+
+        // Fecha o modal quando clicar no X
+        if (btnFechar && !btnFechar.dataset.bound) {
+            btnFechar.dataset.bound = '1';
+            btnFechar.addEventListener('click', () => {
+                if (modalHistorico) modalHistorico.style.display = 'none';
+                const prev = document.body.dataset.scrollY || '0';
+                document.body.style.position = '';
+                document.body.style.top = '';
+                document.body.style.left = '';
+                document.body.style.right = '';
+                delete document.body.dataset.scrollY;
+                window.scrollTo(0, parseInt(prev, 10) || 0);
+            });
+        }
+
+        // Fecha o modal ao clicar fora do conteúdo
+        if (modalHistorico && !modalHistorico.dataset.bound) {
+            modalHistorico.dataset.bound = '1';
+            modalHistorico.addEventListener('click', (ev) => {
+                if (ev.target === modalHistorico) {
+                    modalHistorico.style.display = 'none';
+                    const prev = document.body.dataset.scrollY || '0';
+                    document.body.style.position = '';
+                    document.body.style.top = '';
+                    document.body.style.left = '';
+                    document.body.style.right = '';
+                    delete document.body.dataset.scrollY;
+                    window.scrollTo(0, parseInt(prev, 10) || 0);
+                }
+            });
+        }
 }
 
-function handleExpandOrders() {
-    const filteredCount = orders.filter(order => {
-        const d = new Date(`${order.date}T00:00:00`);
-        return d >= startOfDay(pickerRange.start) && d <= startOfDay(pickerRange.end);
-    }).length;
-
-    // Se tiver muitos pedidos, carrega de 20 em 20, senão mostra tudo
-    if (filteredCount > 20) ordersVisibleCount += 20;
-    else ordersVisibleCount = filteredCount;
-
-    renderOrders();
-}
+// função handleExpandOrders removida — mantida apenas a opção 'Ver Tudo' via modal
 
 function renderSalesChart() {
     const points = getSalesChartData();
@@ -752,6 +962,35 @@ function openProductModal(productId = null) {
 
 function closeProductModal() {
     elements.productModal.style.display = 'none';
+}
+
+function handleSearchProdutos(event) {
+    const term = elements.searchProduct.value.trim();
+    if (!term) {
+        elements.searchProduct.focus();
+        elements.searchProduct.select();
+        showAssistantResponse('Digite o nome do produto para pesquisar.');
+        return;
+    }
+
+    const needle = term.toLowerCase();
+    const matches = products.filter(p => (p.name || '').toLowerCase().includes(needle));
+
+    if (!matches.length) {
+        showAssistantResponse(`Nenhum produto encontrado para "${term}".`);
+        elements.searchProduct.focus();
+        return;
+    }
+
+    if (matches.length === 1) {
+        const prod = matches[0];
+        showAssistantResponse(`Abrindo edição de "${prod.name}"...`);
+        openProductModal(prod.id);
+        return;
+    }
+
+    showAssistantResponse(`${matches.length} resultados encontrados. Refine a busca para editar diretamente.`);
+    elements.searchProduct.focus();
 }
 
 async function saveProductFromForm(event) {
@@ -1100,31 +1339,28 @@ function getActivePayments() {
 
 function getFinanceSummary() {
     const now = new Date();
-    const todayIso = toIsoDate(now);
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - 6);
-    const month = now.getMonth();
-    const year = now.getFullYear();
+    
+    const startOfToday = startOfDay(now);
+    const startOf7Days = new Date(now);
+    startOf7Days.setDate(now.getDate() - 7);
+    const startOf30Days = new Date(now);
+    startOf30Days.setDate(now.getDate() - 30);
 
-    const dailyOrders = orders.filter((order) => order.date === todayIso);
-    const weeklyOrders = orders.filter((order) => new Date(`${order.date}T00:00:00`) >= startOfDay(weekStart));
-    const monthlyOrders = orders.filter((order) => {
-        const date = new Date(`${order.date}T00:00:00`);
-        return date.getMonth() === month && date.getFullYear() === year;
-    });
+    const getOrderDate = (order) => order.createdAt?.toDate ? order.createdAt.toDate() : new Date();
 
-    // Filtro para o ranking baseado no seletor de datas
-    const rangeOrders = orders.filter((order) => {
-        const d = new Date(`${order.date}T00:00:00`);
+    const dailyOrders = orders.filter(o => getOrderDate(o) >= startOfToday);
+    const weeklyOrders = orders.filter(o => getOrderDate(o) >= startOf7Days);
+    const monthlyOrders = orders.filter(o => getOrderDate(o) >= startOf30Days);
+
+    const rangeOrders = orders.filter(o => {
+        const d = getOrderDate(o);
         return d >= startOfDay(pickerRange.start) && d <= startOfDay(pickerRange.end);
     });
-
-    const monthlyTotal = sumOrders(monthlyOrders);
 
     return {
         daily: { count: dailyOrders.length, total: sumOrders(dailyOrders) },
         weekly: { count: weeklyOrders.length, total: sumOrders(weeklyOrders) },
-        monthly: { count: monthlyOrders.length, total: monthlyTotal },
+        monthly: { count: monthlyOrders.length, total: sumOrders(monthlyOrders) },
         ranking: getProductRanking(rangeOrders)
     };
 }
@@ -1135,13 +1371,15 @@ function getSalesChartData() {
     const diffTime = Math.abs(end - start);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
+    const getOrderIso = (order) => toIsoDate(order.createdAt?.toDate ? order.createdAt.toDate() : new Date());
+
     // Caso 1: 1 a 7 dias (Exibe dias da semana: Seg, Ter...)
     if (diffDays <= 7) {
         return Array.from({ length: diffDays }, (_, index) => {
             const date = new Date(start);
             date.setDate(start.getDate() + index);
             const isoDate = toIsoDate(date);
-            const dayOrders = orders.filter(o => o.date === isoDate);
+            const dayOrders = orders.filter(o => getOrderIso(o) === isoDate);
             return {
                 label: new Intl.DateTimeFormat('pt-BR', { weekday: 'short' }).format(date).replace('.', ''),
                 total: sumOrders(dayOrders)
@@ -1160,7 +1398,7 @@ function getSalesChartData() {
                 const date = new Date(start);
                 date.setDate(start.getDate() + i + j);
                 if (date > end) break;
-                total += sumOrders(orders.filter(o => o.date === toIsoDate(date)));
+                total += sumOrders(orders.filter(o => getOrderIso(o) === toIsoDate(date)));
             }
             
             points.push({
@@ -1180,7 +1418,7 @@ function getSalesChartData() {
             const m = current.getMonth();
             const y = current.getFullYear();
             const monthOrders = orders.filter(o => {
-                const d = new Date(`${o.date}T00:00:00`);
+                const d = o.createdAt?.toDate ? o.createdAt.toDate() : new Date();
                 return d.getMonth() === m && d.getFullYear() === y && d >= start && d <= end;
             });
 
@@ -1198,11 +1436,17 @@ function getProductRanking(sourceOrders) {
     const rankingMap = new Map();
 
     sourceOrders.forEach((order) => {
-        order.items.forEach((item) => {
-            const current = rankingMap.get(item.name) || { name: item.name, quantity: 0, revenue: 0 };
-            current.quantity += Number(item.quantity || 0);
-            current.revenue += Number(item.quantity || 0) * Number(item.unitPrice || 0);
-            rankingMap.set(item.name, current);
+        const itens = order.itens || []; 
+        itens.forEach((item) => {
+            const name = item.name || item.nome || 'Desconhecido';
+            const current = rankingMap.get(name) || { name, quantity: 0, revenue: 0 };
+            current.quantity += Number(item.qtd || 1);
+
+            const precoBase = Number(item.preco || 0);
+            const precoComplementos = (item.complementos || []).reduce((acc, c) => acc + Number(c.preco || 0), 0);
+            current.revenue += Number(item.qtd || 1) * (precoBase + precoComplementos);
+            
+            rankingMap.set(name, current);
         });
     });
 
@@ -1214,11 +1458,8 @@ function sumOrders(sourceOrders) {
 }
 
 function getOrderTotal(order) {
-    const subtotal = (order.items || []).reduce((total, item) => {
-        return total + Number(item.quantity || 0) * Number(item.unitPrice || 0);
-    }, 0);
-
-    return subtotal + Number(order.deliveryFee || 0);
+    const total = Number(order.total || 0);
+    return isNaN(total) ? 0 : total;
 }
 
 function isProductAvailable(product) {
