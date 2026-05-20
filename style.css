@@ -15,6 +15,122 @@
     --shadow: 0 12px 28px rgba(18, 55, 45, 0.1);
 }
 
+/* Regras específicas de responsividade extrema para transformar tabela em cards no mobile */
+@media (max-width: 768px) {
+    /* Esconde o cabeçalho original da tabela no mobile */
+    #corpo-tabela-pedidos text, 
+    .table-responsive thead {
+        display: none !important;
+    }
+    
+    /* Transforma cada linha do pedido em um Card isolado */
+    #corpo-tabela-pedidos tr,
+    #corpo-tabela-historico-completo tr {
+        display: block !important;
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        padding: 16px !important;
+        margin-bottom: 16px !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
+    }
+    
+    /* Transforma cada célula em uma linha interna do Card */
+    #corpo-tabela-pedidos td,
+    #corpo-tabela-historico-completo td {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        padding: 8px 0 !important;
+        border: none !important;
+        text-align: right !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    
+    /* Adiciona etiquetas automáticas na esquerda de cada dado no celular */
+    #corpo-tabela-pedidos td:nth-of-type(1)::before, #corpo-tabela-historico-completo td:nth-of-type(1)::before { content: "Tipo:"; font-weight: 600; color: #64748b; }
+    #corpo-tabela-pedidos td:nth-of-type(2)::before, #corpo-tabela-historico-completo td:nth-of-type(2)::before { content: "Cliente:"; font-weight: 600; color: #64748b; }
+    #corpo-tabela-pedidos td:nth-of-type(3)::before, #corpo-tabela-historico-completo td:nth-of-type(3)::before { content: "Itens:"; font-weight: 600; color: #64748b; align-self: flex-start; }
+    #corpo-tabela-pedidos td:nth-of-type(4)::before, #corpo-tabela-historico-completo td:nth-of-type(4)::before { content: "Bairro:"; font-weight: 600; color: #64748b; }
+    #corpo-tabela-pedidos td:nth-of-type(5)::before, #corpo-tabela-historico-completo td:nth-of-type(5)::before { content: "Data/Hora:"; font-weight: 600; color: #64748b; }
+    #corpo-tabela-pedidos td:nth-of-type(6)::before, #corpo-tabela-historico-completo td:nth-of-type(6)::before { content: "Pagamento:"; font-weight: 600; color: #64748b; }
+    #corpo-tabela-pedidos td:nth-of-type(7)::before, #corpo-tabela-historico-completo td:nth-of-type(7)::before { content: "Total:"; font-weight: 600; color: #64748b; }
+}
+
+/* Bloqueio de rolagem quando modal estiver aberto */
+body.modal-open, body[data-modal-open] {
+    overflow: hidden !important;
+    height: 100vh !important;
+}
+
+/* Mobile-first refinements: otimiza produtos, categorias e adicionais */
+@media (max-width: 768px) {
+    /* Produtos: transforma linhas em cards compactos com labels */
+    #productTableBody tr {
+        display: block !important;
+        background: #fff !important;
+        border: 1px solid #e6efe6 !important;
+        border-radius: 10px !important;
+        padding: 10px !important;
+        margin-bottom: 12px !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
+    }
+
+    #productTableBody td {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        padding: 6px 0 !important;
+        border: none !important;
+        width: 100% !important;
+        box-sizing: border-box;
+    }
+
+    #productTableBody td::before {
+        content: attr(data-label) ": ";
+        font-weight: 800;
+        color: var(--muted);
+        display: inline-block;
+        width: 46%;
+        text-align: left;
+        font-size: 0.85rem;
+    }
+
+    /* Ajustes visuais para imagem e detalhes */
+    .product-img { width: 48px; height: 48px; margin-right: 8px; flex: 0 0 auto; }
+    .product-details { max-width: 52%; text-align: right; }
+    .badge, .status-pill { white-space: nowrap; }
+
+    /* Categoria e Adicionais: lista vertical mais espaçada */
+    .category-list { grid-template-columns: 1fr !important; }
+    .category-item { padding: 10px !important; border-radius: 10px !important; display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 12px; }
+    .category-meta { grid-template-columns: 36px 1fr !important; }
+    .category-meta strong { width: 36px; height: 36px; }
+
+    #globalAddonList .category-item { padding: 10px !important; border-radius: 10px !important; display:flex !important; align-items:center !important; justify-content:space-between !important; }
+
+    /* Botões e painéis compactos */
+    .panel { padding: 12px !important; }
+    .panel-header h2 { font-size: 1rem !important; }
+    .btn-primary, .btn-secondary, .btn-muted { padding: 10px 12px !important; min-height: 40px !important; }
+
+    /* Modal historico: limitar largura no mobile e suavizar cantos */
+    #modal-historico > div { width: 95% !important; max-width: 720px !important; padding: 14px !important; border-radius: 12px !important; }
+    .table-responsive table { width: 100% !important; border-collapse: collapse !important; }
+    #corpo-tabela-historico-completo tr { display: block !important; border-bottom: 1px solid #f0f0f0 !important; padding: 8px 0 !important; }
+    #corpo-tabela-historico-completo td { display: flex !important; justify-content: space-between !important; padding: 8px 0 !important; border: none !important; }
+
+    /* Menos margem lateral para o conteúdo principal */
+    .main-content { padding: 12px !important; }
+
+    /* Sidebar escondido por padrão no mobile (mecanismo ja existente usa .open) */
+    .sidebar { left: -280px !important; }
+
+    /* Ajuste geral de tipografia para melhor leitura em telas pequenas */
+    body { font-size: 14px; }
+}
+
 * {
     box-sizing: border-box;
 }
@@ -41,6 +157,14 @@ button {
 .app-shell {
     display: flex;
     min-height: 100vh;
+}
+
+/* Força o main-content a preencher o espaço restante ao lado da sidebar em telas largas */
+@media (min-width: 992px) {
+    .main-content {
+        width: calc(100% - 272px);
+        flex: none;
+    }
 }
 
 .sidebar {
@@ -1054,6 +1178,34 @@ tr:last-child td {
 
 .btn-login:hover {
     background: var(--primary);
+}
+
+.badge-pagamento {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 0.76rem;
+    font-weight: 800;
+    white-space: nowrap;
+    background: var(--accent);
+    color: #725100;
+}
+
+.sem-vendas {
+    color: var(--muted);
+    text-align: center;
+    padding: 10px;
+    font-style: italic;
+}
+
+.item-ranking-produto {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding: 4px 0;
+    border-bottom: 1px dashed var(--line);
 }
 
 .error-message {
