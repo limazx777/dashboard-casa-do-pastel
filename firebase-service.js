@@ -9,7 +9,8 @@ import {
     orderBy, 
     writeBatch,
     updateDoc,
-    deleteDoc
+    deleteDoc,
+    where
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 console.log('Instância do DB no Firebase Service:', db);
@@ -189,13 +190,25 @@ export async function excluirBairro(id) {
  * Essencial para que o gráfico e a lista financeira atualizem sem refresh
  */
 export function ouvirPedidos(callbackSetPedidos) {
-    const q = query(collection(db, "pedidos"), orderBy("data", "desc"));
+    const q = query(
+        collection(db, "pedidos"), 
+        orderBy("createdAt", "desc")
+    );
 
-    return onSnapshot(q, (snapshot) => {
-        const pedidos = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-        callbackSetPedidos(pedidos);
-    });
+    return onSnapshot(q, 
+        (snapshot) => {
+            const listaDePedidos = [];
+            snapshot.forEach((doc) => {
+                const dados = doc.data();
+                console.log("Pedido recebido do Firestore ID:", doc.id, dados);
+                listaDePedidos.push({ id: doc.id, ...dados });
+            });
+            console.log("Total de pedidos processados para renderização:", listaDePedidos.length);
+            callbackSetPedidos(listaDePedidos);
+        },
+        (error) => {
+            console.error("Erro crítico no Firestore (ouvirPedidos):", error);
+            // Aqui você poderia disparar um alerta visual para o usuário se desejar
+        }
+    );
 }
